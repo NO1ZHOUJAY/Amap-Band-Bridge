@@ -1,0 +1,32 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.jacob.amapband'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.jacob.amapband'
+        minSdk 26
+        targetSdk 35
+        versionCode 3
+        versionName '0.1.2'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    compileOnly project(':xposed-api-stub')
+}
