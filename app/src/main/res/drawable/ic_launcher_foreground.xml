@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 公交车车身 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31,72L31,39C31,28 40,24 54,24C68,24 77,28 77,39L77,72C77,77 73,81 68,81L68,86C68,89 66,91 63,91L61,91C58,91 56,89 56,86L56,83L52,83L52,86C52,89 50,91 47,91L45,91C42,91 40,89 40,86L40,81C35,81 31,77 31,72Z" />
+
+    <!-- 车窗，三枚站点形成路线 -->
+    <path
+        android:fillColor="#FF146BFF"
+        android:pathData="M37,39C37,34 42,31 54,31C66,31 71,34 71,39L71,54L37,54Z" />
+    <path
+        android:fillColor="#FFFFB020"
+        android:pathData="M42,45L66,45L66,48L42,48Z" />
+    <path
+        android:fillColor="#FFFFB020"
+        android:pathData="M45,46.5m-4,0a4,4 0,1 0,8 0a4,4 0,1 0,-8 0" />
+    <path
+        android:fillColor="#FFFFB020"
+        android:pathData="M54,46.5m-4,0a4,4 0,1 0,8 0a4,4 0,1 0,-8 0" />
+    <path
+        android:fillColor="#FFFFB020"
+        android:pathData="M63,46.5m-4,0a4,4 0,1 0,8 0a4,4 0,1 0,-8 0" />
+
+    <!-- 前灯 -->
+    <path
+        android:fillColor="#FF146BFF"
+        android:pathData="M42,69m-4,0a4,4 0,1 0,8 0a4,4 0,1 0,-8 0" />
+    <path
+        android:fillColor="#FF146BFF"
+        android:pathData="M66,69m-4,0a4,4 0,1 0,8 0a4,4 0,1 0,-8 0" />
+</vector>
