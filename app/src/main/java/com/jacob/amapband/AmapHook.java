@@ -36,6 +36,7 @@ public final class AmapHook implements IXposedHookLoadPackage {
         XposedBridge.log("AmapBand: loaded in " + lpparam.processName);
 
         hookTextView();
+        hookAjxLabels(lpparam.classLoader);
         hookContentDescription();
         hookSpeech();
         hookNotificationBuilder();
@@ -51,6 +52,35 @@ public final class AmapHook implements IXposedHookLoadPackage {
                 }
             }
         });
+    }
+
+    private static void hookAjxLabels(ClassLoader classLoader) {
+        // 高德 AJX 的 Label 直接继承 View，并不是 TextView。公交导航的可见站点文本
+        // 大量通过这些 setText(String) 写入，之前只 Hook TextView 会完整漏掉。
+        String[] classNames = {
+                "com.autonavi.minimap.ajx3.widget.view.Label",
+                "com.autonavi.map.widget.AjxLabel",
+                "com.autonavi.minimap.ajx3.widget.gradient.LinearGradientLabel",
+                "com.autonavi.minimap.ajx3.widget.gradient.AjxLinearGradientLabel"
+        };
+        for (String className : classNames) {
+            try {
+                Class<?> labelClass = Class.forName(className, false, classLoader);
+                XposedBridge.hookAllMethods(labelClass, "setText", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        Context context = param.thisObject instanceof View
+                                ? ((View) param.thisObject).getContext() : null;
+                        if (param.args != null && param.args.length > 0) {
+                            capture("ajx-label", param.args[0], context);
+                        }
+                    }
+                });
+                XposedBridge.log("AmapBand: hooked AJX label " + className);
+            } catch (Throwable throwable) {
+                XposedBridge.log("AmapBand: AJX label unavailable " + className);
+            }
+        }
     }
 
     private static void hookContentDescription() {

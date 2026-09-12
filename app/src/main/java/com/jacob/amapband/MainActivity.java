@@ -55,7 +55,7 @@ public final class MainActivity extends Activity {
         status = text("", 16, Color.BLACK);
         root.addView(status);
 
-        Button test = button("发送手环测试通知");
+        Button test = button("发送高德真实格式测试通知");
         test.setOnClickListener(v -> BridgeReceiver.postTest(this));
         root.addView(test);
 

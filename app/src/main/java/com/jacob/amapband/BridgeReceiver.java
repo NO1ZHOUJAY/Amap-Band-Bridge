@@ -45,12 +45,12 @@ public final class BridgeReceiver extends BroadcastReceiver {
                 .putLong("updated", now).putString("log", log).apply();
 
         NavParser.Result result = NavParser.parse(text);
-        if (result.useful) postNavigationNotification(context, result);
+        if (result.useful && shouldPost(prefs, result, now)) postNavigationNotification(context, result);
     }
 
     static void postTest(Context context) {
         postNavigationNotification(context,
-                NavParser.parse("当前到达 人民广场站，下一站 南京西路站，还有3站下车"));
+                NavParser.parse("1站后后 沈杜公路换乘 8号线(市光路方向)"));
     }
 
     private static void postNavigationNotification(Context context, NavParser.Result result) {
@@ -64,6 +64,8 @@ public final class BridgeReceiver extends BroadcastReceiver {
             title = "当前：" + result.current;
         } else if (result.next != null) {
             title = "下一站：" + result.next;
+        } else if (result.target != null && result.action != null) {
+            title = "下一步：" + result.target + result.action;
         } else {
             title = "公交导航";
         }
@@ -73,6 +75,9 @@ public final class BridgeReceiver extends BroadcastReceiver {
         if (result.next != null) {
             if (detail.length() > 0) detail.append(" · ");
             detail.append("下一站 ").append(result.next);
+        } else if (result.target != null && result.action != null) {
+            if (detail.length() > 0) detail.append(" · ");
+            detail.append(result.target).append(result.action);
         }
         if (detail.length() == 0) detail.append(result.raw);
 
@@ -92,6 +97,35 @@ public final class BridgeReceiver extends BroadcastReceiver {
                 .setAutoCancel(false)
                 .build();
         manager.notify(NOTIFICATION_ID, notification);
+    }
+
+    private static boolean shouldPost(SharedPreferences prefs, NavParser.Result result, long now) {
+        int previousRemaining = prefs.getInt("notified_remaining", -1);
+        long previousAt = prefs.getLong("notified_at", 0L);
+
+        // 行程总览会在同一瞬间依次渲染当前换乘和后续路段。优先保留较近的动作，
+        // 但数分钟后允许换乘完成后的新路段从小数字重新跳到较大的剩余站数。
+        if (result.remaining != null && previousRemaining >= 0
+                && result.remaining > previousRemaining && now - previousAt < 15_000L) {
+            return false;
+        }
+
+        String key = String.valueOf(result.current) + '|' + result.next + '|'
+                + result.remaining + '|' + result.target + '|' + result.action + '|' + result.urgent;
+        if (key.equals(prefs.getString("notified_key", "")) && now - previousAt < 30 * 60_000L) {
+            return false;
+        }
+
+        SharedPreferences.Editor editor = prefs.edit()
+                .putString("notified_key", key)
+                .putLong("notified_at", now);
+        if (result.remaining != null) {
+            editor.putInt("notified_remaining", result.remaining);
+        } else {
+            editor.remove("notified_remaining");
+        }
+        editor.apply();
+        return true;
     }
 
     static void ensureChannel(NotificationManager manager) {
