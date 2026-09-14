@@ -17,7 +17,9 @@ import java.util.Date;
 public final class BridgeReceiver extends BroadcastReceiver {
     static final String CHANNEL_ID = "bus_navigation";
     static final String PREFS = "bridge_state";
-    private static final int NOTIFICATION_ID = 14001;
+    private static final int FIRST_NOTIFICATION_ID = 14001;
+    private static final int SECOND_NOTIFICATION_ID = 14002;
+    private static final long NAVIGATION_SESSION_MS = 6 * 60 * 60_000L;
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -33,9 +35,9 @@ public final class BridgeReceiver extends BroadcastReceiver {
                 + " [" + source + "] " + text;
         String log = line + (oldLog.isEmpty() ? "" : "\n" + oldLog);
         String[] lines = log.split("\n");
-        if (lines.length > 60) {
+        if (lines.length > 400) {
             StringBuilder trimmed = new StringBuilder();
-            for (int i = 0; i < 60; i++) {
+            for (int i = 0; i < 400; i++) {
                 if (i > 0) trimmed.append('\n');
                 trimmed.append(lines[i]);
             }
@@ -44,8 +46,25 @@ public final class BridgeReceiver extends BroadcastReceiver {
         prefs.edit().putString("last", text).putString("source", source)
                 .putLong("updated", now).putString("log", log).apply();
 
+        boolean sessionWasActive = now < prefs.getLong("navigation_active_until", 0L);
+        if (NavParser.endsNavigation(text)) {
+            prefs.edit().remove("navigation_active_until").apply();
+            return;
+        }
+        if (NavParser.startsNavigation(text)) {
+            SharedPreferences.Editor session = prefs.edit()
+                    .putLong("navigation_active_until", now + NAVIGATION_SESSION_MS);
+            if (!sessionWasActive) {
+                session.remove("notified_key").remove("notified_at");
+            }
+            session.apply();
+            sessionWasActive = true;
+        }
+
         NavParser.Result result = NavParser.parse(text);
-        if (result.useful && shouldPost(prefs, result, now)) postNavigationNotification(context, result);
+        if (sessionWasActive && result.useful && shouldPost(prefs, result, now)) {
+            postNavigationNotification(context, result);
+        }
     }
 
     static void postTest(Context context) {
@@ -58,7 +77,15 @@ public final class BridgeReceiver extends BroadcastReceiver {
         ensureChannel(manager);
 
         String title;
-        if (result.urgent) {
+        if (result.busImminent) {
+            title = "公交即将进站：准备上车";
+        } else if (result.busMinutes != null) {
+            title = "公交快到了：准备上车";
+        } else if (result.remaining != null && result.remaining == 1 && result.action != null) {
+            title = "下一站" + result.action;
+        } else if (result.remaining != null && result.remaining == 3 && result.action != null) {
+            title = "提前提醒：3站后" + result.action;
+        } else if (result.urgent) {
             title = "公交提醒：准备下车";
         } else if (result.current != null) {
             title = "当前：" + result.current;
@@ -71,7 +98,14 @@ public final class BridgeReceiver extends BroadcastReceiver {
         }
 
         StringBuilder detail = new StringBuilder();
-        if (result.remaining != null) detail.append("剩余 ").append(result.remaining).append(" 站");
+        if (result.busImminent) {
+            detail.append("车辆即将到达上车站");
+        } else if (result.busMinutes != null) {
+            detail.append("预计 ").append(result.busMinutes).append(" 分钟");
+            if (result.busStops != null) detail.append(" · ").append(result.busStops).append(" 站");
+        } else if (result.remaining != null) {
+            detail.append("剩余 ").append(result.remaining).append(" 站");
+        }
         if (result.next != null) {
             if (detail.length() > 0) detail.append(" · ");
             detail.append("下一站 ").append(result.next);
@@ -96,35 +130,45 @@ public final class BridgeReceiver extends BroadcastReceiver {
                 .setOnlyAlertOnce(false)
                 .setAutoCancel(false)
                 .build();
-        manager.notify(NOTIFICATION_ID, notification);
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        int previousId = prefs.getInt("notification_id", SECOND_NOTIFICATION_ID);
+        int nextId = previousId == FIRST_NOTIFICATION_ID ? SECOND_NOTIFICATION_ID : FIRST_NOTIFICATION_ID;
+        manager.cancel(previousId);
+        manager.notify(nextId, notification);
+        prefs.edit().putInt("notification_id", nextId).apply();
     }
 
     private static boolean shouldPost(SharedPreferences prefs, NavParser.Result result, long now) {
-        int previousRemaining = prefs.getInt("notified_remaining", -1);
         long previousAt = prefs.getLong("notified_at", 0L);
 
-        // 行程总览会在同一瞬间依次渲染当前换乘和后续路段。优先保留较近的动作，
-        // 但数分钟后允许换乘完成后的新路段从小数字重新跳到较大的剩余站数。
-        if (result.remaining != null && previousRemaining >= 0
-                && result.remaining > previousRemaining && now - previousAt < 15_000L) {
-            return false;
-        }
-
-        String key = String.valueOf(result.current) + '|' + result.next + '|'
-                + result.remaining + '|' + result.target + '|' + result.action + '|' + result.urgent;
-        if (key.equals(prefs.getString("notified_key", "")) && now - previousAt < 30 * 60_000L) {
-            return false;
-        }
-
-        SharedPreferences.Editor editor = prefs.edit()
-                .putString("notified_key", key)
-                .putLong("notified_at", now);
-        if (result.remaining != null) {
-            editor.putInt("notified_remaining", result.remaining);
+        String key;
+        long duplicateWindow;
+        if (result.busImminent) {
+            if (result.busNumber != null && result.busNumber > 1) return false;
+            key = "bus|imminent";
+            duplicateWindow = 10 * 60_000L;
+        } else if (result.busMinutes != null) {
+            if (result.busNumber != null && result.busNumber > 1) return false;
+            if (result.busMinutes > 3 && (result.busStops == null || result.busStops > 2)) return false;
+            key = "bus|near";
+            duplicateWindow = 10 * 60_000L;
+        } else if (result.urgent) {
+            key = "urgent|" + result.raw;
+            duplicateWindow = 30 * 60_000L;
         } else {
-            editor.remove("notified_remaining");
+            // 普通站数递减只记录。3 站时提前预告，1 站时强提醒，避免每站震动。
+            if (result.remaining == null || (result.remaining != 3 && result.remaining != 1)) return false;
+            key = "step|" + result.remaining + '|' + result.target + '|' + result.action;
+            duplicateWindow = 30 * 60_000L;
         }
-        editor.apply();
+        if (key.equals(prefs.getString("notified_key", "")) && now - previousAt < duplicateWindow) {
+            return false;
+        }
+
+        prefs.edit()
+                .putString("notified_key", key)
+                .putLong("notified_at", now)
+                .apply();
         return true;
     }
 

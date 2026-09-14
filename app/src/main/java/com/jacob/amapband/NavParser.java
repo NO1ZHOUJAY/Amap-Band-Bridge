@@ -11,6 +11,10 @@ final class NavParser {
             "(?<!\\d)(\\d{1,2})\\s*站后+\\s*([^，。；;\\n]{2,40}?)(换乘|下车|出站|到达)(?=$|\\s|，|。|；|;|\\d|[A-Za-z（(])");
     private static final Pattern CURRENT = Pattern.compile("(?:当前(?:位于|所在|到达)?|已到(?:达)?|到达|驶入|经过)\\s*[:：]?\\s*([^，。；;\\n]{2,24}?)(?:站|，|。|；|;|$)");
     private static final Pattern NEXT = Pattern.compile("(?:下一站|下站)\\s*[:：]?\\s*([^，。；;\\n]{2,24}?)(?:站|，|。|；|;|$)");
+    private static final Pattern BUS_ETA = Pattern.compile(
+            "(?:第\\s*(\\d{1,2})\\s*辆\\s*)?(\\d{1,2})\\s*分钟\\s*[·・•.\\-]?\\s*(\\d{1,2})\\s*站");
+    private static final Pattern BUS_IMMINENT = Pattern.compile(
+            "(?:第\\s*(\\d{1,2})\\s*辆\\s*)?(?:公交(?:车)?\\s*)?即将进站");
 
     static Result parse(String raw) {
         String text = clean(raw);
@@ -18,6 +22,8 @@ final class NavParser {
         Matcher transitStepMatcher = TRANSIT_STEP.matcher(text);
         Matcher currentMatcher = CURRENT.matcher(text);
         Matcher nextMatcher = NEXT.matcher(text);
+        Matcher busEtaMatcher = BUS_ETA.matcher(text);
+        Matcher busImminentMatcher = BUS_IMMINENT.matcher(text);
 
         Integer remaining = null;
         String target = null;
@@ -28,15 +34,48 @@ final class NavParser {
         }
         if (transitStepMatcher.find()) {
             remaining = Integer.valueOf(transitStepMatcher.group(1));
-            target = clean(transitStepMatcher.group(2));
+            target = clean(transitStepMatcher.group(2))
+                    .replaceFirst("^[·・•\\-—:：\\s]+", "")
+                    .trim();
             action = transitStepMatcher.group(3);
         }
         String current = currentMatcher.find() ? normalizeStation(currentMatcher.group(1)) : null;
         String next = nextMatcher.find() ? normalizeStation(nextMatcher.group(1)) : null;
+        Integer busNumber = null;
+        Integer busMinutes = null;
+        Integer busStops = null;
+        boolean busImminent = false;
+        if (busImminentMatcher.find()) {
+            busImminent = true;
+            if (busImminentMatcher.group(1) != null) {
+                busNumber = Integer.valueOf(busImminentMatcher.group(1));
+            }
+        } else if (busEtaMatcher.find()) {
+            if (busEtaMatcher.group(1) != null) {
+                busNumber = Integer.valueOf(busEtaMatcher.group(1));
+            }
+            busMinutes = Integer.valueOf(busEtaMatcher.group(2));
+            busStops = Integer.valueOf(busEtaMatcher.group(3));
+        }
         boolean urgent = text.contains("准备下车") || text.contains("请下车")
                 || text.contains("已到站") || text.matches(".*即将到达.{2,24}(?:站|终点).*?");
-        boolean useful = remaining != null || current != null || next != null || urgent;
-        return new Result(text, current, next, remaining, target, action, urgent, useful);
+        boolean useful = remaining != null || current != null || next != null || urgent
+                || busImminent || busMinutes != null;
+        return new Result(text, current, next, remaining, target, action, urgent,
+                busNumber, busMinutes, busStops, busImminent, useful);
+    }
+
+    static boolean startsNavigation(String raw) {
+        String text = clean(raw);
+        return text.contains("开始导航") || text.contains("已为您开启导航")
+                || text.contains("下车提醒将在后台")
+                || text.contains("持续为您提供公交语音导航服务");
+    }
+
+    static boolean endsNavigation(String raw) {
+        String text = clean(raw);
+        return text.contains("结束导航") || text.contains("退出导航")
+                || text.contains("关闭下车提醒") || text.contains("已结束行程");
     }
 
     static boolean isCandidate(String value) {
@@ -72,10 +111,15 @@ final class NavParser {
         final String target;
         final String action;
         final boolean urgent;
+        final Integer busNumber;
+        final Integer busMinutes;
+        final Integer busStops;
+        final boolean busImminent;
         final boolean useful;
 
         Result(String raw, String current, String next, Integer remaining, String target, String action,
-               boolean urgent, boolean useful) {
+               boolean urgent, Integer busNumber, Integer busMinutes, Integer busStops,
+               boolean busImminent, boolean useful) {
             this.raw = raw;
             this.current = current;
             this.next = next;
@@ -83,6 +127,10 @@ final class NavParser {
             this.target = target;
             this.action = action;
             this.urgent = urgent;
+            this.busNumber = busNumber;
+            this.busMinutes = busMinutes;
+            this.busStops = busStops;
+            this.busImminent = busImminent;
             this.useful = useful;
         }
     }

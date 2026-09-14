@@ -3,6 +3,7 @@ package com.jacob.amapband;
 import android.Manifest;
 import android.app.Activity;
 import android.app.NotificationManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -67,6 +68,18 @@ public final class MainActivity extends Activity {
         });
         root.addView(notificationSettings);
 
+        Button autoStartSettings = button("打开 HyperOS 自启动管理");
+        autoStartSettings.setOnClickListener(v -> openAutoStartSettings());
+        root.addView(autoStartSettings);
+
+        Button batterySettings = button("打开后台省电设置");
+        batterySettings.setOnClickListener(v -> {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        });
+        root.addView(batterySettings);
+
         Button moduleSettings = button("打开 LSPosed 管理器");
         moduleSettings.setOnClickListener(v -> {
             Intent intent = getPackageManager().getLaunchIntentForPackage("org.lsposed.manager");
@@ -97,7 +110,10 @@ public final class MainActivity extends Activity {
         if (updated == 0L) {
             status.setText("状态：等待高德数据\n启用模块并勾选高德地图后，强制停止再重开高德。");
         } else {
-            status.setText("状态：已捕获\n最后更新：" + DateFormat.getDateTimeInstance().format(new Date(updated))
+            boolean active = System.currentTimeMillis() < prefs.getLong("navigation_active_until", 0L);
+            status.setText("状态：已捕获\n导航会话：" + (active ? "进行中" : "未检测到")
+                    + "\n提醒策略：3站预告 · 1站强提醒 · 公交进站提醒"
+                    + "\n最后更新：" + DateFormat.getDateTimeInstance().format(new Date(updated))
                     + "\n内容：" + prefs.getString("last", ""));
         }
         log.setText(prefs.getString("log", "尚无数据"));
@@ -119,6 +135,19 @@ public final class MainActivity extends Activity {
         params.topMargin = dp(10);
         button.setLayoutParams(params);
         return button;
+    }
+
+    private void openAutoStartSettings() {
+        Intent intent = new Intent("miui.intent.action.OP_AUTO_START");
+        intent.setComponent(new ComponentName(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.autostart.AutoStartManagementActivity"));
+        try {
+            startActivity(intent);
+        } catch (Exception ignored) {
+            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName())));
+        }
     }
 
     private int dp(int value) {

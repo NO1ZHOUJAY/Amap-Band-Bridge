@@ -134,6 +134,9 @@ public final class AmapHook implements IXposedHookLoadPackage {
             if (context == null) return;
             Intent intent = new Intent(ACTION_UPDATE);
             intent.setComponent(new ComponentName("com.jacob.amapband", RECEIVER));
+            // HyperOS 会延迟普通后台广播；导航事件需要尽快送达接收应用。
+            // 自启动/后台运行权限仍需由用户在系统设置中允许。
+            intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
             intent.putExtra("source", source);
             intent.putExtra("text", text);
             intent.putExtra("captured_at", System.currentTimeMillis());
